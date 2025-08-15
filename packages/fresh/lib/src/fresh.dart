@@ -1,41 +1,12 @@
 import 'dart:async';
 
+import 'package:fresh/src/auth_token.dart';
+
 /// An Exception that should be thrown when overriding `refreshToken` if the
 /// refresh fails and should result in a force-logout.
 class RevokeTokenException implements Exception {
   @override
   String toString() => 'RevokeTokenException: The token has been revoked';
-}
-
-/// {@template oauth2_token}
-/// Standard OAuth2Token as defined by
-/// https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
-/// {@endtemplate}
-class OAuth2Token {
-  /// {macro oauth2_token}
-  const OAuth2Token({
-    required this.accessToken,
-    this.tokenType = 'bearer',
-    this.expiresIn,
-    this.refreshToken,
-    this.scope,
-  });
-
-  /// The access token string as issued by the authorization server.
-  final String accessToken;
-
-  /// The type of token this is, typically just the string “bearer”.
-  final String? tokenType;
-
-  /// If the access token expires, the server should reply
-  /// with the duration of time the access token is granted for.
-  final int? expiresIn;
-
-  /// Token which applications can use to obtain another access token.
-  final String? refreshToken;
-
-  /// Application scope granted as defined in https://oauth.net/2/scope
-  final String? scope;
 }
 
 /// Enum representing the current authentication status of the application.
@@ -135,9 +106,11 @@ mixin FreshMixin<T> {
 
     _updateStatus(AuthenticationStatus.undetermined);
 
+    final tokenWithIssueDate = _addIssueDateToToken(token);
+
     try {
-      await _tokenStorage.write(token);
-      _updateStatusByToken(token);
+      await _tokenStorage.write(tokenWithIssueDate);
+      _updateStatusByToken(tokenWithIssueDate);
     } catch (_) {
       _updateStatusByToken(_token);
       rethrow;
@@ -192,5 +165,13 @@ mixin FreshMixin<T> {
   void _updateStatus(AuthenticationStatus status) {
     _authenticationStatus = status;
     _controller.add(_authenticationStatus);
+  }
+
+  /// Adds the issue date to the token if it is not present.
+  T _addIssueDateToToken(T token) {
+    if (token is AuthToken && token.issuedAt == null) {
+      return token.copyWith(issuedAt: DateTime.now()) as T;
+    }
+    return token;
   }
 }
