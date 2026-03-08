@@ -55,6 +55,337 @@ void main() {
     registerFallbackValue(SessionsSnapshot.empty);
   });
 
+  // ================================================================
+  // FreshSession
+  // ================================================================
+
+  group('FreshSession', () {
+    final now = DateTime.utc(2025);
+    final later = DateTime.utc(2025, 2);
+
+    FreshSession session({String? environment}) => FreshSession(
+          id: 'u1@prod',
+          userId: 'u1',
+          createdAt: now,
+          updatedAt: now,
+          environment: environment ?? 'prod',
+        );
+
+    test('toJson produces expected map', () {
+      final json = session().toJson();
+
+      expect(json, <String, Object?>{
+        'id': 'u1@prod',
+        'userId': 'u1',
+        'environment': 'prod',
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+      });
+    });
+
+    test('toJson omits null environment', () {
+      final s = FreshSession(
+        id: 'u1',
+        userId: 'u1',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      expect(s.toJson().containsKey('environment'), isFalse);
+    });
+
+    test('fromJson round-trip', () {
+      final original = session();
+      final restored = FreshSession.fromJson(original.toJson());
+
+      expect(restored, equals(original));
+    });
+
+    test('fromJson with null environment', () {
+      final json = <String, Object?>{
+        'id': 'u1',
+        'userId': 'u1',
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+      };
+
+      final s = FreshSession.fromJson(json);
+
+      expect(s.environment, isNull);
+    });
+
+    test('fromJson throws on missing id/userId', () {
+      expect(
+        () => FreshSession.fromJson(<String, Object?>{}),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('fromJson throws on missing createdAt/updatedAt', () {
+      expect(
+        () => FreshSession.fromJson(<String, Object?>{
+          'id': 'x',
+          'userId': 'x',
+        }),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('copyWith replaces fields', () {
+      final copy = session().copyWith(
+        userId: 'u2',
+        environment: 'staging',
+        updatedAt: later,
+      );
+
+      expect(copy.id, 'u1@prod');
+      expect(copy.userId, 'u2');
+      expect(copy.environment, 'staging');
+      expect(copy.updatedAt, later);
+      expect(copy.createdAt, now);
+    });
+
+    test('copyWith with no args returns equivalent copy', () {
+      final original = session();
+      final copy = original.copyWith();
+
+      expect(copy, equals(original));
+      expect(identical(copy, original), isFalse);
+    });
+
+    test('== returns true for equal sessions', () {
+      expect(session(), equals(session()));
+    });
+
+    test('== returns false for different sessions', () {
+      final a = session();
+      final b = a.copyWith(userId: 'u2');
+
+      expect(a, isNot(equals(b)));
+    });
+
+    test('hashCode is consistent with ==', () {
+      expect(session().hashCode, equals(session().hashCode));
+    });
+
+    test('toString contains id and userId', () {
+      final s = session().toString();
+
+      expect(s, contains('u1@prod'));
+      expect(s, contains('u1'));
+      expect(s, startsWith('FreshSession('));
+    });
+  });
+
+  // ================================================================
+  // SessionsSnapshot
+  // ================================================================
+
+  group('SessionsSnapshot', () {
+    final now = DateTime.utc(2025);
+
+    FreshSession s(String id) => FreshSession(
+          id: id,
+          userId: id,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+    test('empty has no sessions and null active', () {
+      expect(SessionsSnapshot.empty.sessions, isEmpty);
+      expect(SessionsSnapshot.empty.activeSessionId, isNull);
+      expect(SessionsSnapshot.empty.isEmpty, isTrue);
+    });
+
+    test('activeSession resolves from sessions', () {
+      final snap = SessionsSnapshot(
+        sessions: [s('a'), s('b')],
+        activeSessionId: 'b',
+      );
+
+      expect(snap.activeSession, equals(s('b')));
+    });
+
+    test('activeSession returns null for missing id', () {
+      final snap = SessionsSnapshot(
+        sessions: [s('a')],
+        activeSessionId: 'missing',
+      );
+
+      expect(snap.activeSession, isNull);
+    });
+
+    test('activeSession returns null when id is null', () {
+      final snap = SessionsSnapshot(sessions: [s('a')]);
+
+      expect(snap.activeSession, isNull);
+    });
+
+    test('toJson produces expected map', () {
+      final snap = SessionsSnapshot(
+        sessions: [s('a')],
+        activeSessionId: 'a',
+      );
+
+      final json = snap.toJson();
+
+      expect(json['activeSessionId'], 'a');
+      expect(json['sessions'], isA<List<Object?>>());
+      expect(
+        (json['sessions']! as List).length,
+        1,
+      );
+    });
+
+    test('fromJson round-trip', () {
+      final original = SessionsSnapshot(
+        sessions: [s('a'), s('b')],
+        activeSessionId: 'a',
+      );
+      final restored =
+          SessionsSnapshot.fromJson(original.toJson());
+
+      expect(restored, equals(original));
+    });
+
+    test('fromJson throws on missing sessions list', () {
+      expect(
+        () => SessionsSnapshot.fromJson(
+          <String, Object?>{'activeSessionId': 'a'},
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('copyWith replaces sessions', () {
+      final snap = SessionsSnapshot(sessions: [s('a')]);
+      final copy = snap.copyWith(sessions: [s('a'), s('b')]);
+
+      expect(copy.sessions, hasLength(2));
+    });
+
+    test('copyWith can set activeSessionId to null', () {
+      final snap = SessionsSnapshot(
+        sessions: [s('a')],
+        activeSessionId: 'a',
+      );
+      final copy =
+          snap.copyWith(activeSessionId: () => null);
+
+      expect(copy.activeSessionId, isNull);
+    });
+
+    test('== returns true for equal snapshots', () {
+      final a = SessionsSnapshot(
+        sessions: [s('x')],
+        activeSessionId: 'x',
+      );
+      final b = SessionsSnapshot(
+        sessions: [s('x')],
+        activeSessionId: 'x',
+      );
+
+      expect(a, equals(b));
+    });
+
+    test('== returns false for different sessions', () {
+      final a = SessionsSnapshot(sessions: [s('x')]);
+      final b = SessionsSnapshot(sessions: [s('y')]);
+
+      expect(a, isNot(equals(b)));
+    });
+
+    test('== returns false for different active id', () {
+      final a = SessionsSnapshot(
+        sessions: [s('x')],
+        activeSessionId: 'x',
+      );
+      final b = SessionsSnapshot(sessions: [s('x')]);
+
+      expect(a, isNot(equals(b)));
+    });
+
+    test('hashCode is consistent with ==', () {
+      final a = SessionsSnapshot(
+        sessions: [s('x')],
+        activeSessionId: 'x',
+      );
+      final b = SessionsSnapshot(
+        sessions: [s('x')],
+        activeSessionId: 'x',
+      );
+
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('toString contains session count', () {
+      final snap = SessionsSnapshot(sessions: [s('a'), s('b')]);
+
+      expect(snap.toString(), contains('2'));
+      expect(
+        snap.toString(),
+        startsWith('SessionsSnapshot('),
+      );
+    });
+  });
+
+  // ================================================================
+  // InMemorySessionsStorage
+  // ================================================================
+
+  group('InMemorySessionsStorage', () {
+    test('read returns empty by default', () async {
+      final storage = InMemorySessionsStorage();
+
+      expect(await storage.read(), SessionsSnapshot.empty);
+    });
+
+    test('write and read round-trip', () async {
+      final storage = InMemorySessionsStorage();
+      final now = DateTime.utc(2025);
+      final snap = SessionsSnapshot(
+        sessions: [
+          FreshSession(
+            id: 'u1',
+            userId: 'u1',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+        activeSessionId: 'u1',
+      );
+
+      await storage.write(snap);
+
+      expect(await storage.read(), equals(snap));
+    });
+
+    test('clear resets to empty', () async {
+      final storage = InMemorySessionsStorage();
+      final now = DateTime.utc(2025);
+      await storage.write(
+        SessionsSnapshot(
+          sessions: [
+            FreshSession(
+              id: 'u1',
+              userId: 'u1',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+        ),
+      );
+
+      await storage.clear();
+
+      expect(await storage.read(), SessionsSnapshot.empty);
+    });
+  });
+
+  // ================================================================
+  // FreshSessionController
+  // ================================================================
+
   group('FreshSessionController', () {
     // ------ hydration ------
 

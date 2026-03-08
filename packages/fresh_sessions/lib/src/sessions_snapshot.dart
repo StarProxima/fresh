@@ -16,6 +16,35 @@ final class SessionsSnapshot {
     this.activeSessionId,
   });
 
+  /// Creates a [SessionsSnapshot] from a JSON map.
+  ///
+  /// Throws [FormatException] if the `sessions` field is missing
+  /// or malformed.
+  factory SessionsSnapshot.fromJson(Map<String, Object?> json) {
+    final activeSessionId = json['activeSessionId'] as String?;
+    final sessionsJson = json['sessions'];
+    if (sessionsJson is! List<Object?>) {
+      throw const FormatException(
+        'SessionsSnapshot JSON must contain a '
+        '"sessions" list.',
+      );
+    }
+
+    final sessions = <FreshSession>[
+      for (final item in sessionsJson)
+        FreshSession.fromJson(
+          Map<String, Object?>.from(
+            item! as Map<Object?, Object?>,
+          ),
+        ),
+    ];
+
+    return SessionsSnapshot(
+      activeSessionId: activeSessionId,
+      sessions: sessions,
+    );
+  }
+
   /// An empty snapshot with no sessions.
   static const empty = SessionsSnapshot();
 
@@ -33,6 +62,16 @@ final class SessionsSnapshot {
       if (s.id == activeSessionId) return s;
     }
     return null;
+  }
+
+  /// Serializes this snapshot to a JSON-safe map.
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'activeSessionId': activeSessionId,
+      'sessions': [
+        for (final s in sessions) s.toJson(),
+      ],
+    };
   }
 
   /// Whether there are any registered sessions.

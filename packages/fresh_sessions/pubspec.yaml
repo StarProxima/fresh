@@ -10,8 +10,7 @@ environment:
   sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
-  fresh:
-    path: ../fresh
+  fresh: ^0.6.1
   meta: ^1.3.0
 
 dev_dependencies:

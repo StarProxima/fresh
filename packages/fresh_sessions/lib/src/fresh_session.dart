@@ -16,6 +16,38 @@ final class FreshSession {
     this.environment,
   });
 
+  /// Creates a [FreshSession] from a JSON map.
+  ///
+  /// Throws [FormatException] if required fields are missing or
+  /// have wrong types.
+  factory FreshSession.fromJson(Map<String, Object?> json) {
+    final id = json['id'];
+    final userId = json['userId'];
+    final createdAt = json['createdAt'];
+    final updatedAt = json['updatedAt'];
+
+    if (id is! String || userId is! String) {
+      throw const FormatException(
+        'FreshSession JSON must have string '
+        '"id" and "userId".',
+      );
+    }
+    if (createdAt is! String || updatedAt is! String) {
+      throw const FormatException(
+        'FreshSession JSON must have string '
+        '"createdAt" and "updatedAt".',
+      );
+    }
+
+    return FreshSession(
+      id: id,
+      userId: userId,
+      createdAt: DateTime.parse(createdAt),
+      updatedAt: DateTime.parse(updatedAt),
+      environment: json['environment'] as String?,
+    );
+  }
+
   /// Unique session identifier, typically derived from
   /// [userId] + [environment].
   final String id;
@@ -33,6 +65,17 @@ final class FreshSession {
 
   /// When this session was last updated.
   final DateTime updatedAt;
+
+  /// Serializes this session to a JSON-safe map.
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'id': id,
+      'userId': userId,
+      if (environment != null) 'environment': environment,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
 
   /// Returns a copy with the given fields replaced.
   FreshSession copyWith({
