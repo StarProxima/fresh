@@ -198,7 +198,7 @@ void main() {
     test('throws when accessToken is missing', () {
       expect(
         () => codec.decode(<String, Object?>{}),
-        throwsA(isA<FormatException>()),
+        throwsA(isA<TypeError>()),
       );
     });
 
@@ -208,7 +208,7 @@ void main() {
           'accessToken': 'access',
           'refreshToken': 1,
         }),
-        throwsA(isA<FormatException>()),
+        throwsA(isA<TypeError>()),
       );
     });
 
@@ -218,7 +218,7 @@ void main() {
           'accessToken': 'access',
           'expiresIn': '3600',
         }),
-        throwsA(isA<FormatException>()),
+        throwsA(isA<TypeError>()),
       );
     });
 
@@ -228,7 +228,7 @@ void main() {
           'accessToken': 'access',
           'issuedAt': 1,
         }),
-        throwsA(isA<FormatException>()),
+        throwsA(isA<TypeError>()),
       );
     });
 
