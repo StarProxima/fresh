@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 /// {@template token}
 /// Base class for all authentication tokens.
 /// {@endtemplate}
@@ -42,6 +44,21 @@ class OAuth2Token extends Token {
           tokenType: tokenType ?? 'bearer',
         );
 
+  /// Creates an [OAuth2Token] from a JSON map.
+  factory OAuth2Token.fromJson(Map<String, Object?> json) {
+    final issuedAtValue = json['issuedAt'];
+    return OAuth2Token(
+      accessToken: json['accessToken']! as String,
+      refreshToken: json['refreshToken'] as String?,
+      tokenType: json['tokenType'] as String?,
+      expiresIn: json['expiresIn'] as int?,
+      scope: json['scope'] as String?,
+      issuedAt: issuedAtValue == null
+          ? null
+          : DateTime.parse(issuedAtValue as String),
+    );
+  }
+
   /// If the access token expires, the server should reply
   /// with the duration of time the access token is granted for.
   /// In seconds.
@@ -61,6 +78,19 @@ class OAuth2Token extends Token {
     if (expiresIn == null || issuedAt == null) return null;
 
     return issuedAt.add(Duration(seconds: expiresIn));
+  }
+
+  /// Serializes this token to a JSON-safe map.
+  @mustBeOverridden
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'accessToken': accessToken,
+      if (refreshToken != null) 'refreshToken': refreshToken,
+      if (tokenType != null) 'tokenType': tokenType,
+      if (expiresIn != null) 'expiresIn': expiresIn,
+      if (scope != null) 'scope': scope,
+      if (issuedAt != null) 'issuedAt': issuedAt!.toIso8601String(),
+    };
   }
 
   @override
