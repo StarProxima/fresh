@@ -66,6 +66,11 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   /// active session changes. Derived from [snapshotStream].
   Stream<FreshSession?> get activeSessionStream;
 
+  /// Emits a non-null [FreshSession] only when the active session
+  /// switches to a different session. Does not emit on clear/logout
+  /// (when active becomes `null`).
+  Stream<FreshSession> get activeSessionChangedStream;
+
   /// Emits the current [FreshMixin] instance (or `null`) whenever
   /// it is rebuilt or cleared due to a session switch.
   Stream<F?> get freshStream;

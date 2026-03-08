@@ -794,6 +794,40 @@ void main() {
       expect(activeSessions[2]?.id, s2.id);
     });
 
+    test('activeSessionChangedStream skips nulls', () async {
+      final changed = <FreshSession>[];
+
+      final ctrl = _createController();
+      final sub =
+          ctrl.activeSessionChangedStream.listen(changed.add);
+
+      await ctrl.ready;
+
+      final s1 = await ctrl.createSession(
+        token: 'tok1',
+        userId: 'u1',
+        environment: 'prod',
+      );
+      final s2 = await ctrl.createSession(
+        token: 'tok2',
+        userId: 'u2',
+        environment: 'staging',
+        makeActive: false,
+      );
+      await ctrl.setActiveSession(s2);
+      await ctrl.removeSession(s2);
+
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      await ctrl.close();
+
+      // s1 (create) -> s2 (switch), no null after remove
+      expect(changed, hasLength(2));
+      expect(changed[0].id, s1.id);
+      expect(changed[1].id, s2.id);
+    });
+
     // ------ close ------
 
     test('operations throw after close', () async {

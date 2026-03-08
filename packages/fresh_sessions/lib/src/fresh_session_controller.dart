@@ -56,6 +56,10 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       snapshotStream.map((s) => s.activeSession).distinct();
 
   @override
+  Stream<FreshSession> get activeSessionChangedStream =>
+      activeSessionStream.where((s) => s != null).cast<FreshSession>();
+
+  @override
   Stream<F?> get freshStream => _freshController.stream;
 
   @override
