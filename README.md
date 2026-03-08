@@ -24,6 +24,7 @@ Token-based authentication seems simple until you handle the edge cases: tokens 
 | [fresh_dio](https://github.com/felangel/fresh/tree/master/packages/fresh_dio)         | [![pub package](https://img.shields.io/pub/v/fresh_dio.svg)](https://pub.dev/packages/fresh_dio)         |
 | [fresh_graphql](https://github.com/felangel/fresh/tree/master/packages/fresh_graphql) | [![pub package](https://img.shields.io/pub/v/fresh_graphql.svg)](https://pub.dev/packages/fresh_graphql) |
 | [fresh_http](https://github.com/felangel/fresh/tree/master/packages/fresh_http)       | [![pub package](https://img.shields.io/pub/v/fresh_http.svg)](https://pub.dev/packages/fresh_http)       |
+| [fresh_sessions](https://github.com/felangel/fresh/tree/master/packages/fresh_sessions) | Not published yet |
 | [fresh_secure_storage](https://github.com/felangel/fresh/tree/master/packages/fresh_secure_storage) | Not published yet |
 
 ## Features
