@@ -126,13 +126,21 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   }
 
   @override
-  Future<void> removeSession(FreshSession session) async {
+  Future<void> removeSession([FreshSession? session]) async {
     _assertNotClosed();
-    final wasActive = _snapshot.activeSessionId == session.id;
+    final sessionId = session?.id ?? _snapshot.activeSessionId;
+
+    if (sessionId == null) {
+      throw StateError(
+        'No session to remove',
+      );
+    }
+
+    final wasActive = _snapshot.activeSessionId == sessionId;
 
     final sessions = [
       for (final s in _snapshot.sessions)
-        if (s.id != session.id) s,
+        if (s.id != sessionId) s,
     ];
 
     if (wasActive) {
@@ -150,7 +158,7 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       );
     }
 
-    await _tokenStorageBuilder(session.id).delete();
+    await _tokenStorageBuilder(sessionId).delete();
   }
 
   @override

@@ -105,7 +105,8 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   ///
   /// If [session] was the active one, the active session and the
   /// [FreshMixin] instance are cleared (set to `null`).
-  Future<void> removeSession(FreshSession session);
+  /// If [session] is `null`, the active session is removed.
+  Future<void> removeSession([FreshSession? session]);
 
   /// Removes **all** sessions and deletes every associated token
   /// storage entry.

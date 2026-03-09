@@ -123,10 +123,9 @@ packages:
   fresh:
     dependency: "direct main"
     description:
-      name: fresh
-      sha256: "2fe5ddb4ffac9da905e1c4c44256b87b2f826bc5941e344af637ade61bfa95a6"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../fresh"
+      relative: true
+    source: path
     version: "0.6.1"
   leak_tracker:
     dependency: transitive
