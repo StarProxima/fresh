@@ -2,17 +2,9 @@ import 'package:fresh/fresh.dart';
 import 'package:fresh_sessions/src/fresh_session.dart';
 import 'package:fresh_sessions/src/sessions_snapshot.dart';
 
-/// Builds a deterministic session id from user identity and
-/// optional environment.
-typedef SessionIdBuilder = String Function(
-  String userId,
-  String? environment,
-);
-
-/// Builds a [TokenStorage] scoped to a specific session by its
-/// [sessionId].
+/// Builds a [TokenStorage] scoped to a specific [session].
 typedef TokenStorageBuilder<T> = TokenStorage<T> Function(
-  String sessionId,
+  FreshSession session,
 );
 
 /// Builds a concrete [FreshMixin] instance using the provided
@@ -59,7 +51,7 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   F? get fresh;
 
   /// Emits a new [SessionsSnapshot] every time the session registry
-  /// is mutated (create / remove / switch / clear).
+  /// is mutated (save / remove / switch / clear).
   Stream<SessionsSnapshot> get snapshotStream;
 
   /// Emits the active [FreshSession] (or `null`) whenever the
@@ -75,20 +67,20 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   /// it is rebuilt or cleared due to a session switch.
   Stream<F?> get freshStream;
 
-  /// Creates a new session, writes the initial [token] to its
-  /// [TokenStorage], and optionally makes it the active session.
+  /// Creates or updates a session for the given [userId], writes
+  /// the [token] to its [TokenStorage], and optionally makes it
+  /// the active session.
   ///
-  /// If a session with the same id already exists, its metadata
-  /// is updated and the token is overwritten.
+  /// If a session with the same [userId] already exists, its
+  /// metadata is updated and the token is overwritten.
   ///
-  /// When [makeActive] is `true` (default), the new session becomes
+  /// When [makeActive] is `true` (default), the session becomes
   /// active immediately and a new [FreshMixin] instance is built.
   ///
   /// Returns the created (or updated) [FreshSession].
-  Future<FreshSession> createSession({
+  Future<FreshSession> saveSession({
     required T token,
     required String userId,
-    String? environment,
     bool makeActive = true,
   });
 

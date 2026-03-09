@@ -14,18 +14,15 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     required SessionsStorage sessionsStorage,
     required TokenStorageBuilder<T> tokenStorageBuilder,
     required FreshBuilder<F, T> freshBuilder,
-    SessionIdBuilder? sessionIdBuilder,
   })  : _sessionsStorage = sessionsStorage,
         _tokenStorageBuilder = tokenStorageBuilder,
-        _freshBuilder = freshBuilder,
-        _sessionIdBuilder = sessionIdBuilder ?? _defaultSessionIdBuilder {
+        _freshBuilder = freshBuilder {
     _ready = _hydrate();
   }
 
   final SessionsStorage _sessionsStorage;
   final TokenStorageBuilder<T> _tokenStorageBuilder;
   final FreshBuilder<F, T> _freshBuilder;
-  final SessionIdBuilder _sessionIdBuilder;
 
   late final Future<void> _ready;
   bool _closed = false;
@@ -63,33 +60,29 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   Stream<F?> get freshStream => _freshController.stream;
 
   @override
-  Future<FreshSession> createSession({
+  Future<FreshSession> saveSession({
     required T token,
     required String userId,
-    String? environment,
     bool makeActive = true,
   }) async {
     _assertNotClosed();
-    final id = _sessionIdBuilder(userId, environment);
     final now = DateTime.now();
 
-    final existing = _findSession(id);
+    final existing = _findSession(userId);
 
     final record = existing?.copyWith(updatedAt: now) ??
         FreshSession(
-          id: id,
           userId: userId,
-          environment: environment,
           createdAt: now,
           updatedAt: now,
         );
 
-    await _tokenStorageBuilder(id).write(token);
+    await _tokenStorageBuilder(record).write(token);
 
     final sessions = existing != null
         ? [
             for (final s in _snapshot.sessions)
-              if (s.id == id) record else s,
+              if (s.userId == userId) record else s,
           ]
         : [..._snapshot.sessions, record];
 
@@ -97,10 +90,10 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       await _updateSnapshot(
         _snapshot.copyWith(
           sessions: sessions,
-          activeSessionId: () => id,
+          activeUserId: () => userId,
         ),
       );
-      await _rebuildFresh(id);
+      await _rebuildFresh(record);
     } else {
       await _updateSnapshot(
         _snapshot.copyWith(sessions: sessions),
@@ -113,34 +106,39 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   @override
   Future<void> setActiveSession(FreshSession session) async {
     _assertNotClosed();
-    if (_findSession(session.id) == null) {
+    if (_findSession(session.userId) == null) {
       throw StateError(
-        'Session ${session.id} not found in registry',
+        'Session for user ${session.userId} not found in registry',
       );
     }
 
     await _updateSnapshot(
-      _snapshot.copyWith(activeSessionId: () => session.id),
+      _snapshot.copyWith(activeUserId: () => session.userId),
     );
-    await _rebuildFresh(session.id);
+    await _rebuildFresh(session);
   }
 
   @override
   Future<void> removeSession([FreshSession? session]) async {
     _assertNotClosed();
-    final sessionId = session?.id ?? _snapshot.activeSessionId;
+    final targetUserId = session?.userId ?? _snapshot.activeUserId;
 
-    if (sessionId == null) {
+    if (targetUserId == null) {
+      throw StateError('No session to remove');
+    }
+
+    final targetSession = _findSession(targetUserId);
+    if (targetSession == null) {
       throw StateError(
-        'No session to remove',
+        'Session for user $targetUserId not found in registry',
       );
     }
 
-    final wasActive = _snapshot.activeSessionId == sessionId;
+    final wasActive = _snapshot.activeUserId == targetUserId;
 
     final sessions = [
       for (final s in _snapshot.sessions)
-        if (s.id != sessionId) s,
+        if (s.userId != targetUserId) s,
     ];
 
     if (wasActive) {
@@ -148,7 +146,7 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       await _updateSnapshot(
         _snapshot.copyWith(
           sessions: sessions,
-          activeSessionId: () => null,
+          activeUserId: () => null,
         ),
       );
       _emitFresh(null);
@@ -158,20 +156,20 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       );
     }
 
-    await _tokenStorageBuilder(sessionId).delete();
+    await _tokenStorageBuilder(targetSession).delete();
   }
 
   @override
   Future<void> clearAllSessions() async {
     _assertNotClosed();
-    final sessionIds = _snapshot.sessions.map((s) => s.id).toList();
+    final sessions = _snapshot.sessions.toList();
 
     await _closeFresh();
     await _updateSnapshot(SessionsSnapshot.empty);
     _emitFresh(null);
 
-    for (final id in sessionIds) {
-      await _tokenStorageBuilder(id).delete();
+    for (final session in sessions) {
+      await _tokenStorageBuilder(session).delete();
     }
   }
 
@@ -192,9 +190,9 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     _snapshot = await _sessionsStorage.read();
     _snapshotController.add(_snapshot);
 
-    final activeId = _snapshot.activeSessionId;
-    if (activeId != null && _findSession(activeId) != null) {
-      await _rebuildFresh(activeId);
+    final activeSession = _snapshot.activeSession;
+    if (activeSession != null) {
+      await _rebuildFresh(activeSession);
     } else {
       _emitFresh(null);
     }
@@ -206,9 +204,9 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     _snapshotController.add(snapshot);
   }
 
-  Future<void> _rebuildFresh(String sessionId) async {
+  Future<void> _rebuildFresh(FreshSession session) async {
     await _closeFresh();
-    _fresh = _freshBuilder(_tokenStorageBuilder(sessionId));
+    _fresh = _freshBuilder(_tokenStorageBuilder(session));
     _emitFresh(_fresh);
   }
 
@@ -226,24 +224,16 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     }
   }
 
-  FreshSession? _findSession(String id) {
+  FreshSession? _findSession(String userId) {
     for (final s in _snapshot.sessions) {
-      if (s.id == id) return s;
+      if (s.userId == userId) return s;
     }
     return null;
   }
 
   void _assertNotClosed() {
     if (_closed) {
-      throw StateError(
-        'FreshSessionController has been closed',
-      );
+      throw StateError('FreshSessionController has been closed');
     }
   }
-
-  static String _defaultSessionIdBuilder(
-    String userId,
-    String? environment,
-  ) =>
-      environment != null ? '$userId@$environment' : userId;
 }

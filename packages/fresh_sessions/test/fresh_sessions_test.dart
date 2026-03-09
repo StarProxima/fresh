@@ -23,9 +23,16 @@ class _TestFresh with FreshMixin<String> {
 class _TokenStorageRegistry {
   final _storages = <String, InMemoryTokenStorage<String>>{};
 
-  InMemoryTokenStorage<String> call(String sessionId) {
+  InMemoryTokenStorage<String> call(FreshSession session) {
     return _storages.putIfAbsent(
-      sessionId,
+      session.userId,
+      InMemoryTokenStorage<String>.new,
+    );
+  }
+
+  InMemoryTokenStorage<String> forUserId(String userId) {
+    return _storages.putIfAbsent(
+      userId,
       InMemoryTokenStorage<String>.new,
     );
   }
@@ -38,7 +45,6 @@ class _TokenStorageRegistry {
 FreshSessionController<_TestFresh, String> _createController({
   SessionsStorage? sessionsStorage,
   _TokenStorageRegistry? registry,
-  SessionIdBuilder? sessionIdBuilder,
 }) {
   final storage = sessionsStorage ?? InMemorySessionsStorage();
   final reg = registry ?? _TokenStorageRegistry();
@@ -46,7 +52,6 @@ FreshSessionController<_TestFresh, String> _createController({
     sessionsStorage: storage,
     tokenStorageBuilder: reg.call,
     freshBuilder: _TestFresh.new,
-    sessionIdBuilder: sessionIdBuilder,
   );
 }
 
@@ -63,35 +68,20 @@ void main() {
     final now = DateTime.utc(2025);
     final later = DateTime.utc(2025, 2);
 
-    FreshSession session({String? environment}) => FreshSession(
-          id: 'u1@prod',
+    FreshSession session() => FreshSession(
           userId: 'u1',
           createdAt: now,
           updatedAt: now,
-          environment: environment ?? 'prod',
         );
 
     test('toJson produces expected map', () {
       final json = session().toJson();
 
       expect(json, <String, Object?>{
-        'id': 'u1@prod',
         'userId': 'u1',
-        'environment': 'prod',
         'createdAt': now.toIso8601String(),
         'updatedAt': now.toIso8601String(),
       });
-    });
-
-    test('toJson omits null environment', () {
-      final s = FreshSession(
-        id: 'u1',
-        userId: 'u1',
-        createdAt: now,
-        updatedAt: now,
-      );
-
-      expect(s.toJson().containsKey('environment'), isFalse);
     });
 
     test('fromJson round-trip', () {
@@ -101,20 +91,7 @@ void main() {
       expect(restored, equals(original));
     });
 
-    test('fromJson with null environment', () {
-      final json = <String, Object?>{
-        'id': 'u1',
-        'userId': 'u1',
-        'createdAt': now.toIso8601String(),
-        'updatedAt': now.toIso8601String(),
-      };
-
-      final s = FreshSession.fromJson(json);
-
-      expect(s.environment, isNull);
-    });
-
-    test('fromJson throws on missing id/userId', () {
+    test('fromJson throws on missing userId', () {
       expect(
         () => FreshSession.fromJson(<String, Object?>{}),
         throwsA(isA<FormatException>()),
@@ -124,7 +101,6 @@ void main() {
     test('fromJson throws on missing createdAt/updatedAt', () {
       expect(
         () => FreshSession.fromJson(<String, Object?>{
-          'id': 'x',
           'userId': 'x',
         }),
         throwsA(isA<FormatException>()),
@@ -132,15 +108,9 @@ void main() {
     });
 
     test('copyWith replaces fields', () {
-      final copy = session().copyWith(
-        userId: 'u2',
-        environment: 'staging',
-        updatedAt: later,
-      );
+      final copy = session().copyWith(updatedAt: later);
 
-      expect(copy.id, 'u1@prod');
-      expect(copy.userId, 'u2');
-      expect(copy.environment, 'staging');
+      expect(copy.userId, 'u1');
       expect(copy.updatedAt, later);
       expect(copy.createdAt, now);
     });
@@ -159,7 +129,11 @@ void main() {
 
     test('== returns false for different sessions', () {
       final a = session();
-      final b = a.copyWith(userId: 'u2');
+      final b = FreshSession(
+        userId: 'u2',
+        createdAt: now,
+        updatedAt: now,
+      );
 
       expect(a, isNot(equals(b)));
     });
@@ -168,10 +142,9 @@ void main() {
       expect(session().hashCode, equals(session().hashCode));
     });
 
-    test('toString contains id and userId', () {
+    test('toString contains userId', () {
       final s = session().toString();
 
-      expect(s, contains('u1@prod'));
       expect(s, contains('u1'));
       expect(s, startsWith('FreshSession('));
     });
@@ -184,38 +157,37 @@ void main() {
   group('SessionsSnapshot', () {
     final now = DateTime.utc(2025);
 
-    FreshSession s(String id) => FreshSession(
-          id: id,
-          userId: id,
+    FreshSession s(String userId) => FreshSession(
+          userId: userId,
           createdAt: now,
           updatedAt: now,
         );
 
     test('empty has no sessions and null active', () {
       expect(SessionsSnapshot.empty.sessions, isEmpty);
-      expect(SessionsSnapshot.empty.activeSessionId, isNull);
+      expect(SessionsSnapshot.empty.activeUserId, isNull);
       expect(SessionsSnapshot.empty.isEmpty, isTrue);
     });
 
     test('activeSession resolves from sessions', () {
       final snap = SessionsSnapshot(
         sessions: [s('a'), s('b')],
-        activeSessionId: 'b',
+        activeUserId: 'b',
       );
 
       expect(snap.activeSession, equals(s('b')));
     });
 
-    test('activeSession returns null for missing id', () {
+    test('activeSession returns null for missing userId', () {
       final snap = SessionsSnapshot(
         sessions: [s('a')],
-        activeSessionId: 'missing',
+        activeUserId: 'missing',
       );
 
       expect(snap.activeSession, isNull);
     });
 
-    test('activeSession returns null when id is null', () {
+    test('activeSession returns null when activeUserId is null', () {
       final snap = SessionsSnapshot(sessions: [s('a')]);
 
       expect(snap.activeSession, isNull);
@@ -224,12 +196,12 @@ void main() {
     test('toJson produces expected map', () {
       final snap = SessionsSnapshot(
         sessions: [s('a')],
-        activeSessionId: 'a',
+        activeUserId: 'a',
       );
 
       final json = snap.toJson();
 
-      expect(json['activeSessionId'], 'a');
+      expect(json['activeUserId'], 'a');
       expect(json['sessions'], isA<List<Object?>>());
       expect(
         (json['sessions']! as List).length,
@@ -240,7 +212,7 @@ void main() {
     test('fromJson round-trip', () {
       final original = SessionsSnapshot(
         sessions: [s('a'), s('b')],
-        activeSessionId: 'a',
+        activeUserId: 'a',
       );
       final restored =
           SessionsSnapshot.fromJson(original.toJson());
@@ -251,7 +223,7 @@ void main() {
     test('fromJson throws on missing sessions list', () {
       expect(
         () => SessionsSnapshot.fromJson(
-          <String, Object?>{'activeSessionId': 'a'},
+          <String, Object?>{'activeUserId': 'a'},
         ),
         throwsA(isA<FormatException>()),
       );
@@ -264,25 +236,24 @@ void main() {
       expect(copy.sessions, hasLength(2));
     });
 
-    test('copyWith can set activeSessionId to null', () {
+    test('copyWith can set activeUserId to null', () {
       final snap = SessionsSnapshot(
         sessions: [s('a')],
-        activeSessionId: 'a',
+        activeUserId: 'a',
       );
-      final copy =
-          snap.copyWith(activeSessionId: () => null);
+      final copy = snap.copyWith(activeUserId: () => null);
 
-      expect(copy.activeSessionId, isNull);
+      expect(copy.activeUserId, isNull);
     });
 
     test('== returns true for equal snapshots', () {
       final a = SessionsSnapshot(
         sessions: [s('x')],
-        activeSessionId: 'x',
+        activeUserId: 'x',
       );
       final b = SessionsSnapshot(
         sessions: [s('x')],
-        activeSessionId: 'x',
+        activeUserId: 'x',
       );
 
       expect(a, equals(b));
@@ -295,10 +266,10 @@ void main() {
       expect(a, isNot(equals(b)));
     });
 
-    test('== returns false for different active id', () {
+    test('== returns false for different active userId', () {
       final a = SessionsSnapshot(
         sessions: [s('x')],
-        activeSessionId: 'x',
+        activeUserId: 'x',
       );
       final b = SessionsSnapshot(sessions: [s('x')]);
 
@@ -308,11 +279,11 @@ void main() {
     test('hashCode is consistent with ==', () {
       final a = SessionsSnapshot(
         sessions: [s('x')],
-        activeSessionId: 'x',
+        activeUserId: 'x',
       );
       final b = SessionsSnapshot(
         sessions: [s('x')],
-        activeSessionId: 'x',
+        activeUserId: 'x',
       );
 
       expect(a.hashCode, equals(b.hashCode));
@@ -346,13 +317,12 @@ void main() {
       final snap = SessionsSnapshot(
         sessions: [
           FreshSession(
-            id: 'u1',
             userId: 'u1',
             createdAt: now,
             updatedAt: now,
           ),
         ],
-        activeSessionId: 'u1',
+        activeUserId: 'u1',
       );
 
       await storage.write(snap);
@@ -367,7 +337,6 @@ void main() {
         SessionsSnapshot(
           sessions: [
             FreshSession(
-              id: 'u1',
               userId: 'u1',
               createdAt: now,
               updatedAt: now,
@@ -393,21 +362,19 @@ void main() {
       final storage = InMemorySessionsStorage();
       final now = DateTime.now();
       final record = FreshSession(
-        id: 'u1@prod',
         userId: 'u1',
-        environment: 'prod',
         createdAt: now,
         updatedAt: now,
       );
       await storage.write(
         SessionsSnapshot(
           sessions: [record],
-          activeSessionId: 'u1@prod',
+          activeUserId: 'u1',
         ),
       );
 
       final tokenReg = _TokenStorageRegistry();
-      await tokenReg('u1@prod').write('tok_u1');
+      await tokenReg.forUserId('u1').write('tok_u1');
 
       final ctrl = FreshSessionController<_TestFresh, String>(
         sessionsStorage: storage,
@@ -434,62 +401,41 @@ void main() {
       await ctrl.close();
     });
 
-    // ------ createSession ------
+    // ------ saveSession ------
 
-    test('createSession with makeActive builds fresh', () async {
+    test('saveSession with makeActive builds fresh', () async {
       final reg = _TokenStorageRegistry();
       final ctrl = _createController(registry: reg);
       await ctrl.ready;
 
-      final record = await ctrl.createSession(
+      final record = await ctrl.saveSession(
         token: 'my_token',
         userId: 'u1',
-        environment: 'prod',
       );
 
       expect(record.userId, 'u1');
-      expect(record.environment, 'prod');
-      expect(record.id, 'u1@prod');
       expect(ctrl.activeSession, equals(record));
       expect(ctrl.fresh, isNotNull);
 
-      final storedToken = await reg('u1@prod').read();
+      final storedToken = await reg.forUserId('u1').read();
       expect(storedToken, 'my_token');
 
       await ctrl.close();
     });
 
-    test('createSession without environment uses userId as id', () async {
+    test('saveSession with makeActive: false keeps previous state', () async {
       final ctrl = _createController();
       await ctrl.ready;
 
-      final record = await ctrl.createSession(
-        token: 'tok',
-        userId: 'u1',
-      );
-
-      expect(record.id, 'u1');
-      expect(record.environment, isNull);
-      expect(ctrl.fresh, isNotNull);
-
-      await ctrl.close();
-    });
-
-    test('createSession with makeActive: false keeps previous state', () async {
-      final ctrl = _createController();
-      await ctrl.ready;
-
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
       final firstFresh = ctrl.fresh;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'prod',
         makeActive: false,
       );
 
@@ -504,19 +450,17 @@ void main() {
       await ctrl.close();
     });
 
-    test('createSession for existing id updates record', () async {
+    test('saveSession for existing userId updates record', () async {
       final ctrl = _createController();
       await ctrl.ready;
 
-      final first = await ctrl.createSession(
+      final first = await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
-      final second = await ctrl.createSession(
+      final second = await ctrl.saveSession(
         token: 'tok1_new',
         userId: 'u1',
-        environment: 'prod',
       );
 
       expect(ctrl.snapshot.sessions, hasLength(1));
@@ -536,17 +480,15 @@ void main() {
       final ctrl = _createController();
       await ctrl.ready;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
       final freshForS1 = ctrl.fresh;
 
-      final s2 = await ctrl.createSession(
+      final s2 = await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'prod',
         makeActive: false,
       );
 
@@ -564,7 +506,6 @@ void main() {
       await ctrl.ready;
 
       final unknown = FreshSession(
-        id: 'nope',
         userId: 'x',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -585,10 +526,9 @@ void main() {
       final ctrl = _createController(registry: reg);
       await ctrl.ready;
 
-      final s1 = await ctrl.createSession(
+      final s1 = await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
 
       await ctrl.removeSession(s1);
@@ -597,7 +537,7 @@ void main() {
       expect(ctrl.fresh, isNull);
       expect(ctrl.snapshot.isEmpty, isTrue);
 
-      final storedToken = await reg('u1@prod').read();
+      final storedToken = await reg.forUserId('u1').read();
       expect(storedToken, isNull);
 
       await ctrl.close();
@@ -607,16 +547,14 @@ void main() {
       final ctrl = _createController();
       await ctrl.ready;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
 
-      final s2 = await ctrl.createSession(
+      final s2 = await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'prod',
         makeActive: false,
       );
 
@@ -635,15 +573,13 @@ void main() {
       final ctrl = _createController(registry: reg);
       await ctrl.ready;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'staging',
         makeActive: false,
       );
 
@@ -653,51 +589,8 @@ void main() {
       expect(ctrl.activeSession, isNull);
       expect(ctrl.fresh, isNull);
 
-      expect(await reg('u1@prod').read(), isNull);
-      expect(await reg('u2@staging').read(), isNull);
-
-      await ctrl.close();
-    });
-
-    // ------ sessionIdBuilder ------
-
-    test('custom sessionIdBuilder is used for id generation', () async {
-      final ctrl = _createController(
-        sessionIdBuilder: (userId, env) => '${env}_$userId',
-      );
-      await ctrl.ready;
-
-      final record = await ctrl.createSession(
-        token: 'tok',
-        userId: 'u1',
-        environment: 'prod',
-      );
-
-      expect(record.id, 'prod_u1');
-
-      await ctrl.close();
-    });
-
-    test(
-        'default sessionIdBuilder separates same user '
-        'in different envs', () async {
-      final ctrl = _createController();
-      await ctrl.ready;
-
-      final s1 = await ctrl.createSession(
-        token: 'tok1',
-        userId: 'u1',
-        environment: 'prod',
-      );
-      final s2 = await ctrl.createSession(
-        token: 'tok2',
-        userId: 'u1',
-        environment: 'staging',
-        makeActive: false,
-      );
-
-      expect(s1.id, isNot(equals(s2.id)));
-      expect(ctrl.snapshot.sessions, hasLength(2));
+      expect(await reg.forUserId('u1').read(), isNull);
+      expect(await reg.forUserId('u2').read(), isNull);
 
       await ctrl.close();
     });
@@ -711,15 +604,13 @@ void main() {
       final freshInstances = <_TestFresh?>[];
       final sub = ctrl.freshStream.listen(freshInstances.add);
 
-      final s1 = await ctrl.createSession(
+      final s1 = await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
-      final s2 = await ctrl.createSession(
+      final s2 = await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'prod',
         makeActive: false,
       );
 
@@ -747,10 +638,9 @@ void main() {
 
       await ctrl.ready;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok',
         userId: 'u1',
-        environment: 'prod',
       );
       await ctrl.removeSession(ctrl.snapshot.sessions.first);
 
@@ -769,15 +659,13 @@ void main() {
 
       await ctrl.ready;
 
-      final s1 = await ctrl.createSession(
+      final s1 = await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
-      final s2 = await ctrl.createSession(
+      final s2 = await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'staging',
         makeActive: false,
       );
       await ctrl.setActiveSession(s2);
@@ -787,11 +675,11 @@ void main() {
       await sub.cancel();
       await ctrl.close();
 
-      // null (hydration) -> s1 (create) -> s2 (switch)
+      // null (hydration) -> s1 (save) -> s2 (switch)
       expect(activeSessions, hasLength(3));
       expect(activeSessions[0], isNull);
-      expect(activeSessions[1]?.id, s1.id);
-      expect(activeSessions[2]?.id, s2.id);
+      expect(activeSessions[1]?.userId, s1.userId);
+      expect(activeSessions[2]?.userId, s2.userId);
     });
 
     test('activeSessionChangedStream skips nulls', () async {
@@ -803,15 +691,13 @@ void main() {
 
       await ctrl.ready;
 
-      final s1 = await ctrl.createSession(
+      final s1 = await ctrl.saveSession(
         token: 'tok1',
         userId: 'u1',
-        environment: 'prod',
       );
-      final s2 = await ctrl.createSession(
+      final s2 = await ctrl.saveSession(
         token: 'tok2',
         userId: 'u2',
-        environment: 'staging',
         makeActive: false,
       );
       await ctrl.setActiveSession(s2);
@@ -822,10 +708,10 @@ void main() {
       await sub.cancel();
       await ctrl.close();
 
-      // s1 (create) -> s2 (switch), no null after remove
+      // s1 (save) -> s2 (switch), no null after remove
       expect(changed, hasLength(2));
-      expect(changed[0].id, s1.id);
-      expect(changed[1].id, s2.id);
+      expect(changed[0].userId, s1.userId);
+      expect(changed[1].userId, s2.userId);
     });
 
     // ------ close ------
@@ -836,10 +722,9 @@ void main() {
       await ctrl.close();
 
       expect(
-        () => ctrl.createSession(
+        () => ctrl.saveSession(
           token: 'tok',
           userId: 'u1',
-          environment: 'prod',
         ),
         throwsA(isA<StateError>()),
       );
@@ -859,10 +744,9 @@ void main() {
       );
       await ctrl.ready;
 
-      await ctrl.createSession(
+      await ctrl.saveSession(
         token: 'tok',
         userId: 'u1',
-        environment: 'prod',
       );
 
       verify(() => storage.write(any())).called(greaterThanOrEqualTo(1));

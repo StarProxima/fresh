@@ -21,7 +21,7 @@ typedef CorruptedSessionsHandler = FutureOr<void> Function(
 /// {
 ///   "schemaVersion": 1,
 ///   "payload": {
-///     "activeSessionId": "u1@prod",
+///     "activeUserId": "u1",
 ///     "sessions": [...]
 ///   }
 /// }

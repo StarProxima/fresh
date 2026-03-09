@@ -70,19 +70,15 @@ class FakeFlutterSecureStorage implements FlutterSecureStorage {
 // -----------------------------------------------------------
 
 FreshSession _session({
-  required String id,
   required String userId,
-  String? environment,
   DateTime? createdAt,
   DateTime? updatedAt,
 }) {
   final now = DateTime.utc(2025);
   return FreshSession(
-    id: id,
     userId: userId,
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
-    environment: environment,
   );
 }
 
@@ -119,24 +115,18 @@ void main() {
 
     test('write and read round-trip', () async {
       final storage = createStorage();
-      final session = _session(
-        id: 'u1@prod',
-        userId: 'u1',
-        environment: 'prod',
-      );
+      final session = _session(userId: 'u1');
       final snapshot = SessionsSnapshot(
         sessions: [session],
-        activeSessionId: 'u1@prod',
+        activeUserId: 'u1',
       );
 
       await storage.write(snapshot);
       final restored = await storage.read();
 
       expect(restored.sessions, hasLength(1));
-      expect(restored.activeSessionId, 'u1@prod');
-      expect(restored.sessions.first.id, 'u1@prod');
+      expect(restored.activeUserId, 'u1');
       expect(restored.sessions.first.userId, 'u1');
-      expect(restored.sessions.first.environment, 'prod');
       expect(
         restored.sessions.first.createdAt,
         session.createdAt,
@@ -151,55 +141,38 @@ void main() {
       final storage = createStorage();
       final snapshot = SessionsSnapshot(
         sessions: [
-          _session(id: 'u1@prod', userId: 'u1', environment: 'prod'),
-          _session(id: 'u2@staging', userId: 'u2', environment: 'staging'),
-          _session(id: 'u3', userId: 'u3'),
+          _session(userId: 'u1'),
+          _session(userId: 'u2'),
+          _session(userId: 'u3'),
         ],
-        activeSessionId: 'u2@staging',
+        activeUserId: 'u2',
       );
 
       await storage.write(snapshot);
       final restored = await storage.read();
 
       expect(restored.sessions, hasLength(3));
-      expect(restored.activeSessionId, 'u2@staging');
-      expect(restored.sessions[2].environment, isNull);
+      expect(restored.activeUserId, 'u2');
     });
 
-    test('round-trip with null activeSessionId', () async {
+    test('round-trip with null activeUserId', () async {
       final storage = createStorage();
       final snapshot = SessionsSnapshot(
-        sessions: [
-          _session(id: 'u1', userId: 'u1'),
-        ],
+        sessions: [_session(userId: 'u1')],
       );
 
       await storage.write(snapshot);
       final restored = await storage.read();
 
-      expect(restored.activeSessionId, isNull);
+      expect(restored.activeUserId, isNull);
       expect(restored.sessions, hasLength(1));
-    });
-
-    test('round-trip with nullable environment', () async {
-      final storage = createStorage();
-      final session = _session(id: 'u1', userId: 'u1');
-      final snapshot = SessionsSnapshot(
-        sessions: [session],
-        activeSessionId: 'u1',
-      );
-
-      await storage.write(snapshot);
-      final restored = await storage.read();
-
-      expect(restored.sessions.first.environment, isNull);
     });
 
     test('clear removes data', () async {
       final storage = createStorage();
       await storage.write(
         SessionsSnapshot(
-          sessions: [_session(id: 'u1', userId: 'u1')],
+          sessions: [_session(userId: 'u1')],
         ),
       );
 
@@ -214,7 +187,7 @@ void main() {
       final storage = createStorage(storageKey: 'my_sessions');
       await storage.write(
         SessionsSnapshot(
-          sessions: [_session(id: 'u1', userId: 'u1')],
+          sessions: [_session(userId: 'u1')],
         ),
       );
 
@@ -229,14 +202,8 @@ void main() {
       final storage = createStorage();
       await storage.write(
         SessionsSnapshot(
-          sessions: [
-            _session(
-              id: 'u1@prod',
-              userId: 'u1',
-              environment: 'prod',
-            ),
-          ],
-          activeSessionId: 'u1@prod',
+          sessions: [_session(userId: 'u1')],
+          activeUserId: 'u1',
         ),
       );
 
@@ -249,7 +216,7 @@ void main() {
 
       final payload =
           envelope['payload']! as Map<String, Object?>;
-      expect(payload['activeSessionId'], 'u1@prod');
+      expect(payload['activeUserId'], 'u1');
       expect(payload['sessions'], isA<List<Object?>>());
     });
 
@@ -326,7 +293,7 @@ void main() {
         <String, Object?>{
           'schemaVersion': 1,
           'payload': <String, Object?>{
-            'activeSessionId': 'x',
+            'activeUserId': 'x',
           },
         },
       );
@@ -343,7 +310,7 @@ void main() {
           'schemaVersion': 1,
           'payload': <String, Object?>{
             'sessions': [
-              <String, Object?>{'id': 123},
+              <String, Object?>{'userId': 123},
             ],
           },
         },

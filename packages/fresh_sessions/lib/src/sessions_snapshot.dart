@@ -10,10 +10,10 @@ import 'package:meta/meta.dart';
 @immutable
 final class SessionsSnapshot {
   /// Creates a snapshot with the given [sessions] and
-  /// optional [activeSessionId].
+  /// optional [activeUserId].
   const SessionsSnapshot({
     this.sessions = const [],
-    this.activeSessionId,
+    this.activeUserId,
   });
 
   /// Creates a [SessionsSnapshot] from a JSON map.
@@ -21,7 +21,7 @@ final class SessionsSnapshot {
   /// Throws [FormatException] if the `sessions` field is missing
   /// or malformed.
   factory SessionsSnapshot.fromJson(Map<String, Object?> json) {
-    final activeSessionId = json['activeSessionId'] as String?;
+    final activeUserId = json['activeUserId'] as String?;
     final sessionsJson = json['sessions'];
     if (sessionsJson is! List<Object?>) {
       throw const FormatException(
@@ -40,7 +40,7 @@ final class SessionsSnapshot {
     ];
 
     return SessionsSnapshot(
-      activeSessionId: activeSessionId,
+      activeUserId: activeUserId,
       sessions: sessions,
     );
   }
@@ -51,15 +51,15 @@ final class SessionsSnapshot {
   /// All registered sessions.
   final List<FreshSession> sessions;
 
-  /// The [FreshSession.id] of the currently active session, or
+  /// The [FreshSession.userId] of the currently active session, or
   /// null if no session is active.
-  final String? activeSessionId;
+  final String? activeUserId;
 
   /// The currently active [FreshSession], resolved from [sessions].
   FreshSession? get activeSession {
-    if (activeSessionId == null) return null;
+    if (activeUserId == null) return null;
     for (final s in sessions) {
-      if (s.id == activeSessionId) return s;
+      if (s.userId == activeUserId) return s;
     }
     return null;
   }
@@ -67,7 +67,7 @@ final class SessionsSnapshot {
   /// Serializes this snapshot to a JSON-safe map.
   Map<String, Object?> toJson() {
     return <String, Object?>{
-      'activeSessionId': activeSessionId,
+      'activeUserId': activeUserId,
       'sessions': [
         for (final s in sessions) s.toJson(),
       ],
@@ -80,13 +80,12 @@ final class SessionsSnapshot {
   /// Returns a copy with the given fields replaced.
   SessionsSnapshot copyWith({
     List<FreshSession>? sessions,
-    String? Function()? activeSessionId,
+    String? Function()? activeUserId,
   }) {
     return SessionsSnapshot(
       sessions: sessions ?? this.sessions,
-      activeSessionId: activeSessionId != null
-          ? activeSessionId()
-          : this.activeSessionId,
+      activeUserId:
+          activeUserId != null ? activeUserId() : this.activeUserId,
     );
   }
 
@@ -94,17 +93,16 @@ final class SessionsSnapshot {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SessionsSnapshot &&
-          activeSessionId == other.activeSessionId &&
+          activeUserId == other.activeUserId &&
           _listEquals(sessions, other.sessions);
 
   @override
-  int get hashCode =>
-      Object.hash(activeSessionId, Object.hashAll(sessions));
+  int get hashCode => Object.hash(activeUserId, Object.hashAll(sessions));
 
   @override
   String toString() =>
       'SessionsSnapshot(sessions: ${sessions.length}, '
-      'activeSessionId: $activeSessionId)';
+      'activeUserId: $activeUserId)';
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {

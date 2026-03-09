@@ -7,12 +7,21 @@ Secure [SessionsStorage](https://pub.dev/packages/fresh_sessions) implementation
 ```dart
 import 'package:fresh_sessions/fresh_sessions.dart';
 import 'package:fresh_sessions_secure_storage/fresh_sessions_secure_storage.dart';
+import 'package:fresh_secure_storage/fresh_secure_storage.dart';
 
-final sessionsStorage = SecureSessionsStorage();
+const env = String.fromEnvironment('ENV', defaultValue: 'prod');
 
-final controller = FreshSessionController<MyFresh, MyToken>(
+final sessionsStorage = SecureSessionsStorage(
+  storageKey: '${env}_sessions',
+);
+
+final controller = FreshSessionController<MyFresh, OAuth2Token>(
   sessionsStorage: sessionsStorage,
-  tokenStorageBuilder: (sessionId) => MyTokenStorage(sessionId),
+  tokenStorageBuilder: (session) => SecureTokenStorage(
+    storage: const FlutterSecureStorage(),
+    codec: const OAuth2TokenCodec(),
+    storageKey: '${env}_${session.userId}_token',
+  ),
   freshBuilder: (tokenStorage) => MyFresh(tokenStorage: tokenStorage),
 );
 
@@ -21,11 +30,19 @@ await controller.ready;
 
 The snapshot is stored as a single JSON document under a configurable key (default: `fresh_sessions`). A versioned envelope is used for forward compatibility.
 
-### Custom storage key
+### Environment separation
+
+Different environments get completely isolated session registries via `storageKey`:
 
 ```dart
-final sessionsStorage = SecureSessionsStorage(
-  storageKey: 'my_app_sessions',
+// Production sessions
+final prodSessions = SecureSessionsStorage(
+  storageKey: 'prod_sessions',
+);
+
+// Staging sessions
+final stagingSessions = SecureSessionsStorage(
+  storageKey: 'staging_sessions',
 );
 ```
 
