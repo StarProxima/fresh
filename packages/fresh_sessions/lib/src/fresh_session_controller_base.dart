@@ -35,6 +35,10 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   /// state and (if an active session exists) built the initial
   /// [FreshMixin] instance.
   ///
+  /// If legacy session readers are configured and the snapshot is
+  /// empty, legacy tokens are migrated into sessions before the
+  /// future completes.
+  ///
   /// Must be awaited before accessing [snapshot], [activeSession],
   /// or [fresh].
   Future<void> get ready;
@@ -81,8 +85,15 @@ abstract interface class FreshSessionControllerBase<F extends FreshMixin<T>,
   Future<FreshSession> saveSession({
     required T token,
     required String userId,
+    Map<String, Object?> metadata = const {},
     bool makeActive = true,
   });
+
+  /// Reads the token stored for [session] without switching to it.
+  ///
+  /// Useful for fetching user profile data from the backend using
+  /// a non-active session's credentials.
+  Future<T?> readToken(FreshSession session);
 
   /// Switches the active session to [session].
   ///

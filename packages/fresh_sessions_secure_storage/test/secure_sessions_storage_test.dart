@@ -104,12 +104,12 @@ void main() {
   }
 
   group('SecureSessionsStorage', () {
-    test('read returns empty snapshot when nothing stored', () async {
+    test('read returns null when nothing stored', () async {
       final storage = createStorage();
 
       final snapshot = await storage.read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors, isEmpty);
     });
 
@@ -124,7 +124,8 @@ void main() {
       await storage.write(snapshot);
       final restored = await storage.read();
 
-      expect(restored.sessions, hasLength(1));
+      expect(restored, isNotNull);
+      expect(restored!.sessions, hasLength(1));
       expect(restored.activeUserId, 'u1');
       expect(restored.sessions.first.userId, 'u1');
       expect(
@@ -151,7 +152,8 @@ void main() {
       await storage.write(snapshot);
       final restored = await storage.read();
 
-      expect(restored.sessions, hasLength(3));
+      expect(restored, isNotNull);
+      expect(restored!.sessions, hasLength(3));
       expect(restored.activeUserId, 'u2');
     });
 
@@ -164,11 +166,12 @@ void main() {
       await storage.write(snapshot);
       final restored = await storage.read();
 
-      expect(restored.activeUserId, isNull);
+      expect(restored, isNotNull);
+      expect(restored!.activeUserId, isNull);
       expect(restored.sessions, hasLength(1));
     });
 
-    test('clear removes data', () async {
+    test('clear removes data and read returns null', () async {
       final storage = createStorage();
       await storage.write(
         SessionsSnapshot(
@@ -179,7 +182,7 @@ void main() {
       await storage.clear();
       final restored = await storage.read();
 
-      expect(restored, SessionsSnapshot.empty);
+      expect(restored, isNull);
       expect(fakeStorage.deletedKeys, contains('fresh_sessions'));
     });
 
@@ -228,22 +231,22 @@ void main() {
       final storage = createStorage();
       final snapshot = await storage.read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(fakeStorage.values.containsKey('fresh_sessions'), isFalse);
       expect(corruptionErrors, hasLength(1));
     });
 
-    test('returns empty when envelope is not a map', () async {
+    test('returns null when envelope is not a map', () async {
       fakeStorage.values['fresh_sessions'] =
           jsonEncode(<Object?>['list']);
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('returns empty when schemaVersion missing', () async {
+    test('returns null when schemaVersion missing', () async {
       fakeStorage.values['fresh_sessions'] = jsonEncode(
         <String, Object?>{
           'payload': <String, Object?>{
@@ -254,11 +257,11 @@ void main() {
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('returns empty when schemaVersion is newer', () async {
+    test('returns null when schemaVersion is newer', () async {
       fakeStorage.values['fresh_sessions'] = jsonEncode(
         <String, Object?>{
           'schemaVersion': 999,
@@ -270,11 +273,11 @@ void main() {
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('returns empty when payload is not a map', () async {
+    test('returns null when payload is not a map', () async {
       fakeStorage.values['fresh_sessions'] = jsonEncode(
         <String, Object?>{
           'schemaVersion': 1,
@@ -284,11 +287,11 @@ void main() {
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('returns empty when sessions list is missing', () async {
+    test('returns null when sessions list is missing', () async {
       fakeStorage.values['fresh_sessions'] = jsonEncode(
         <String, Object?>{
           'schemaVersion': 1,
@@ -300,11 +303,11 @@ void main() {
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('returns empty when a session entry is malformed', () async {
+    test('returns null when a session entry is malformed', () async {
       fakeStorage.values['fresh_sessions'] = jsonEncode(
         <String, Object?>{
           'schemaVersion': 1,
@@ -318,11 +321,11 @@ void main() {
 
       final snapshot = await createStorage().read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
       expect(corruptionErrors, hasLength(1));
     });
 
-    test('no handler is fine - still returns empty on corruption',
+    test('no handler is fine - still returns null on corruption',
         () async {
       fakeStorage.values['fresh_sessions'] = 'broken';
 
@@ -331,7 +334,7 @@ void main() {
       );
       final snapshot = await storage.read();
 
-      expect(snapshot, SessionsSnapshot.empty);
+      expect(snapshot, isNull);
     });
   });
 }

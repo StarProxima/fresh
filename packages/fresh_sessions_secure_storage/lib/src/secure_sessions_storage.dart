@@ -53,9 +53,9 @@ class SecureSessionsStorage implements SessionsStorage {
   final CorruptedSessionsHandler? onCorruptedSessions;
 
   @override
-  Future<SessionsSnapshot> read() async {
+  Future<SessionsSnapshot?> read() async {
     final raw = await _storage.read(key: storageKey);
-    if (raw == null) return SessionsSnapshot.empty;
+    if (raw == null) return null;
 
     try {
       return _decodeEnvelope(raw);
@@ -65,7 +65,7 @@ class SecureSessionsStorage implements SessionsStorage {
       if (handler != null) {
         await Future<void>.value(handler(error, stackTrace));
       }
-      return SessionsSnapshot.empty;
+      return null;
     }
   }
 

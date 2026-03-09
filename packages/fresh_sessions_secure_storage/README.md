@@ -26,6 +26,13 @@ final controller = FreshSessionController<MyFresh, OAuth2Token>(
 );
 
 await controller.ready;
+
+// Save session with user metadata for account list UI
+await controller.saveSession(
+  token: myToken,
+  userId: 'user-123',
+  metadata: {'name': 'John', 'avatarUrl': '...'},
+);
 ```
 
 The snapshot is stored as a single JSON document under a configurable key (default: `fresh_sessions`). A versioned envelope is used for forward compatibility.

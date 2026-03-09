@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fresh/fresh.dart';
 import 'package:fresh_sessions/src/fresh_session.dart';
 import 'package:fresh_sessions/src/fresh_session_controller_base.dart';
+import 'package:fresh_sessions/src/legacy_session_reader.dart';
 import 'package:fresh_sessions/src/sessions_snapshot.dart';
 import 'package:fresh_sessions/src/sessions_storage.dart';
 
@@ -14,15 +15,19 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     required SessionsStorage sessionsStorage,
     required TokenStorageBuilder<T> tokenStorageBuilder,
     required FreshBuilder<F, T> freshBuilder,
+    List<LegacySessionReader<T>> legacySessionReaders = const [],
   })  : _sessionsStorage = sessionsStorage,
         _tokenStorageBuilder = tokenStorageBuilder,
-        _freshBuilder = freshBuilder {
+        _freshBuilder = freshBuilder,
+        _legacySessionReaders =
+            List<LegacySessionReader<T>>.unmodifiable(legacySessionReaders) {
     _ready = _hydrate();
   }
 
   final SessionsStorage _sessionsStorage;
   final TokenStorageBuilder<T> _tokenStorageBuilder;
   final FreshBuilder<F, T> _freshBuilder;
+  final List<LegacySessionReader<T>> _legacySessionReaders;
 
   late final Future<void> _ready;
   bool _closed = false;
@@ -63,6 +68,7 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   Future<FreshSession> saveSession({
     required T token,
     required String userId,
+    Map<String, Object?> metadata = const {},
     bool makeActive = true,
   }) async {
     _assertNotClosed();
@@ -70,11 +76,12 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
 
     final existing = _findSession(userId);
 
-    final record = existing?.copyWith(updatedAt: now) ??
+    final record = existing?.copyWith(updatedAt: now, metadata: metadata) ??
         FreshSession(
           userId: userId,
           createdAt: now,
           updatedAt: now,
+          metadata: metadata,
         );
 
     await _tokenStorageBuilder(record).write(token);
@@ -101,6 +108,11 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     }
 
     return record;
+  }
+
+  @override
+  Future<T?> readToken(FreshSession session) {
+    return _tokenStorageBuilder(session).read();
   }
 
   @override
@@ -187,7 +199,13 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   // ---------------------------------------------------------
 
   Future<void> _hydrate() async {
-    _snapshot = await _sessionsStorage.read();
+    final stored = await _sessionsStorage.read();
+    _snapshot = stored ?? SessionsSnapshot.empty;
+
+    if (stored == null) {
+      await _migrateLegacy();
+    }
+
     _snapshotController.add(_snapshot);
 
     final activeSession = _snapshot.activeSession;
@@ -195,6 +213,24 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       await _rebuildFresh(activeSession);
     } else {
       _emitFresh(null);
+    }
+  }
+
+  Future<void> _migrateLegacy() async {
+    for (final reader in _legacySessionReaders) {
+      try {
+        final result = await reader.read();
+        if (result == null) continue;
+
+        await saveSession(
+          token: result.token,
+          userId: result.userId,
+          metadata: result.metadata,
+        );
+        await result.runCleanup();
+      } catch (_) {
+        // Skip broken legacy entries silently.
+      }
     }
   }
 
