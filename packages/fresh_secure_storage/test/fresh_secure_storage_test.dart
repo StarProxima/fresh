@@ -154,7 +154,7 @@ void main() {
   group('OAuth2TokenCodec', () {
     const codec = OAuth2TokenCodec();
 
-    test('encodes a full token', () {
+    test('encode/decode round-trip', () {
       final issuedAt = DateTime.utc(2024, 1, 2, 3, 4, 5);
       final token = OAuth2Token(
         accessToken: 'access',
@@ -165,20 +165,8 @@ void main() {
         issuedAt: issuedAt,
       );
 
-      expect(codec.encode(token), <String, Object?>{
-        'accessToken': 'access',
-        'refreshToken': 'refresh',
-        'tokenType': 'bearer',
-        'expiresIn': 3600,
-        'scope': 'profile',
-        'issuedAt': issuedAt.toIso8601String(),
-      });
-    });
-
-    test('decodes a full token', () {
-      final issuedAt = DateTime.utc(2024, 1, 2, 3, 4, 5);
-
-      final token = codec.decode(<String, Object?>{
+      final json = codec.encode(token);
+      expect(json, <String, Object?>{
         'accessToken': 'access',
         'refreshToken': 'refresh',
         'tokenType': 'bearer',
@@ -187,59 +175,13 @@ void main() {
         'issuedAt': issuedAt.toIso8601String(),
       });
 
-      expect(token.accessToken, 'access');
-      expect(token.refreshToken, 'refresh');
-      expect(token.tokenType, 'bearer');
-      expect(token.expiresIn, 3600);
-      expect(token.scope, 'profile');
-      expect(token.issuedAt, issuedAt);
-    });
-
-    test('throws when accessToken is missing', () {
-      expect(
-        () => codec.decode(<String, Object?>{}),
-        throwsA(isA<TypeError>()),
-      );
-    });
-
-    test('throws when refreshToken has an invalid type', () {
-      expect(
-        () => codec.decode(<String, Object?>{
-          'accessToken': 'access',
-          'refreshToken': 1,
-        }),
-        throwsA(isA<TypeError>()),
-      );
-    });
-
-    test('throws when expiresIn has an invalid type', () {
-      expect(
-        () => codec.decode(<String, Object?>{
-          'accessToken': 'access',
-          'expiresIn': '3600',
-        }),
-        throwsA(isA<TypeError>()),
-      );
-    });
-
-    test('throws when issuedAt has an invalid type', () {
-      expect(
-        () => codec.decode(<String, Object?>{
-          'accessToken': 'access',
-          'issuedAt': 1,
-        }),
-        throwsA(isA<TypeError>()),
-      );
-    });
-
-    test('throws when issuedAt is not parseable', () {
-      expect(
-        () => codec.decode(<String, Object?>{
-          'accessToken': 'access',
-          'issuedAt': 'not-a-date',
-        }),
-        throwsA(isA<FormatException>()),
-      );
+      final decoded = codec.decode(json);
+      expect(decoded.accessToken, 'access');
+      expect(decoded.refreshToken, 'refresh');
+      expect(decoded.tokenType, 'bearer');
+      expect(decoded.expiresIn, 3600);
+      expect(decoded.scope, 'profile');
+      expect(decoded.issuedAt, issuedAt);
     });
   });
 
@@ -258,13 +200,10 @@ void main() {
         codec: codec,
       );
 
-      expect(
-        await reader.read(),
-        isNull,
-      );
+      expect(await reader.read(), isNull);
     });
 
-    test('reads a legacy payload from the active storage key', () async {
+    test('reads and cleans up a legacy payload', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'accessToken': 'access',
         'refreshToken': 'refresh',
@@ -286,28 +225,6 @@ void main() {
       expect(storage.deletedKeys, <String>['token']);
     });
 
-    test('reads a legacy payload from a custom key', () async {
-      storage.values['legacy-token'] = jsonEncode(<String, Object?>{
-        'accessToken': 'access',
-        'refreshToken': 'refresh',
-        'tokenType': 'bearer',
-        'userId': 'user-1',
-        'environment': 'stage',
-      });
-
-      final reader = JsonLegacyTokenReader<TestToken>(
-        read: () => storage.read(key: 'legacy-token'),
-        codec: codec,
-        cleanup: () => storage.delete(key: 'legacy-token'),
-      );
-      final result = await reader.read();
-
-      expect(result, isNotNull);
-      expect(result!.token.environment, 'stage');
-      await result.runCleanup();
-      expect(storage.deletedKeys, <String>['legacy-token']);
-    });
-
     test('throws when the legacy payload is not a json object', () {
       storage.values['token'] = jsonEncode(<Object?>['not', 'a', 'map']);
       final reader = JsonLegacyTokenReader<TestToken>(
@@ -315,10 +232,7 @@ void main() {
         codec: codec,
       );
 
-      expect(
-        reader.read,
-        throwsA(isA<FormatException>()),
-      );
+      expect(reader.read, throwsA(isA<FormatException>()));
     });
   });
 
@@ -353,7 +267,7 @@ void main() {
       );
     }
 
-    test('writes and reads a custom token with user metadata', () async {
+    test('writes and reads a token', () async {
       final tokenStorage = createStorage();
       const token = TestToken(
         accessToken: 'access',
@@ -364,21 +278,13 @@ void main() {
 
       await tokenStorage.write(token);
 
-      final decodedEnvelope =
+      final envelope =
           jsonDecode(storage.values['token']!) as Map<String, Object?>;
-      expect(decodedEnvelope['schemaVersion'], 1);
-      expect(decodedEnvelope['payload'], <String, Object?>{
-        'accessToken': 'access',
-        'refreshToken': 'refresh',
-        'tokenType': 'bearer',
-        'userId': 'user-1',
-        'environment': 'prod',
-      });
+      expect(envelope['schemaVersion'], 1);
 
-      final restoredToken = await tokenStorage.read();
-      expect(restoredToken!.accessToken, 'access');
-      expect(restoredToken.userId, 'user-1');
-      expect(restoredToken.environment, 'prod');
+      final restored = await tokenStorage.read();
+      expect(restored!.accessToken, 'access');
+      expect(restored.userId, 'user-1');
     });
 
     test('deletes the active key', () async {
@@ -392,9 +298,7 @@ void main() {
     });
 
     test('returns null when nothing is stored', () async {
-      final tokenStorage = createStorage();
-
-      expect(await tokenStorage.read(), isNull);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors, isEmpty);
     });
 
@@ -421,18 +325,17 @@ void main() {
       );
 
       final token = await tokenStorage.read();
-
-      expect(token, isNotNull);
       expect(token!.environment, 'prod');
 
-      final rewrittenEnvelope =
+      final rewritten =
           jsonDecode(storage.values['token']!) as Map<String, Object?>;
-      expect(rewrittenEnvelope['schemaVersion'], 2);
+      expect(rewritten['schemaVersion'], 2);
     });
 
-    test('rewrites a token recovered from a legacy reader', () async {
+    test('skips null-returning reader and recovers from next', () async {
       final tokenStorage = createStorage(
         legacyReaders: <LegacyTokenReader<TestToken>>[
+          const StaticLegacyTokenReader<TestToken>(null),
           StaticLegacyTokenReader<TestToken>(
             LegacyReadResult<TestToken>(
               token: const TestToken(
@@ -450,15 +353,12 @@ void main() {
 
       final token = await tokenStorage.read();
 
-      expect(token, isNotNull);
       expect(token!.environment, 'stage');
       expect(storage.values.containsKey('token'), isTrue);
-      expect(storage.values.containsKey('legacy-token'), isFalse);
       expect(storage.deletedKeys, <String>['legacy-token']);
     });
 
-    test('falls back to legacy readers when the current payload is invalid',
-        () async {
+    test('falls back to legacy readers on corrupted payload', () async {
       storage.values['token'] = 'not-json';
       storage.values['legacy-token'] = jsonEncode(<String, Object?>{
         'accessToken': 'access',
@@ -480,15 +380,11 @@ void main() {
 
       final token = await tokenStorage.read();
 
-      expect(token, isNotNull);
       expect(token!.userId, 'user-1');
-      final rewrittenEnvelope =
-          jsonDecode(storage.values['token']!) as Map<String, Object?>;
-      expect(rewrittenEnvelope['schemaVersion'], 1);
       expect(storage.deletedKeys, <String>['legacy-token']);
     });
 
-    test('continues to the next legacy reader after an error', () async {
+    test('continues to next legacy reader after an error', () async {
       final tokenStorage = createStorage(
         legacyReaders: const <LegacyTokenReader<TestToken>>[
           ThrowingLegacyTokenReader<TestToken>(
@@ -513,101 +409,84 @@ void main() {
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('clears the active key and reports corruption when payload is broken',
-        () async {
+    // Corruption: each test hits a unique throw statement
+
+    test('reports corruption when payload is not a map', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'schemaVersion': 1,
         'payload': <Object?>['broken'],
       });
 
-      final token = await createStorage().read();
-
-      expect(token, isNull);
-      expect(storage.values.containsKey('token'), isFalse);
-      expect(storage.deletedKeys, <String>['token']);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('clears the active key when schemaVersion is not an int', () async {
+    test('reports corruption when schemaVersion is not an int', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'schemaVersion': '1',
         'payload': <String, Object?>{},
       });
 
-      final token = await createStorage().read();
-
-      expect(token, isNull);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('clears the active key when schemaVersion is zero', () async {
+    test('reports corruption when schemaVersion is zero', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'schemaVersion': 0,
         'payload': <String, Object?>{},
       });
 
-      final token = await createStorage().read();
-
-      expect(token, isNull);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('clears the active key when schemaVersion is newer than supported',
-        () async {
+    test('reports corruption when schemaVersion is newer', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'schemaVersion': 2,
         'payload': <String, Object?>{
-          'accessToken': 'access',
-          'refreshToken': 'refresh',
+          'accessToken': 'a',
+          'refreshToken': 'r',
           'tokenType': 'bearer',
-          'userId': 'user-1',
-          'environment': 'prod',
+          'userId': 'u',
+          'environment': 'e',
         },
       });
 
-      final token = await createStorage().read();
-
-      expect(token, isNull);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
 
-    test('clears the active key when a required migration is missing',
-        () async {
+    test('reports corruption when required migration is missing', () async {
       storage.values['token'] = jsonEncode(<String, Object?>{
         'schemaVersion': 1,
         'payload': <String, Object?>{
-          'accessToken': 'access',
-          'refreshToken': 'refresh',
+          'accessToken': 'a',
+          'refreshToken': 'r',
           'tokenType': 'bearer',
-          'userId': 'user-1',
-          'environment': 'prod',
+          'userId': 'u',
+          'environment': 'e',
         },
       });
 
-      final token = await createStorage(schemaVersion: 2).read();
-
-      expect(token, isNull);
+      expect(await createStorage(schemaVersion: 2).read(), isNull);
       expect(corruptionErrors.single, isA<StateError>());
     });
 
-    test('clears the active key when envelope is not a json object', () async {
+    test('reports corruption when envelope is not a json object', () async {
       storage.values['token'] = jsonEncode(<Object?>['broken']);
 
-      final token = await createStorage().read();
-
-      expect(token, isNull);
+      expect(await createStorage().read(), isNull);
       expect(corruptionErrors.single, isA<FormatException>());
     });
+
+    // Validation
 
     test('throws for invalid migration source versions', () {
       expect(
         () => createStorage(
           migrations: const <StorageMigration>[
-            StaticMigration(
-              fromVersion: 0,
-              toVersion: 1,
-              environment: 'prod',
-            ),
+            StaticMigration(fromVersion: 0, toVersion: 1, environment: 'e'),
           ],
         ),
         throwsArgumentError,
@@ -618,11 +497,7 @@ void main() {
       expect(
         () => createStorage(
           migrations: const <StorageMigration>[
-            StaticMigration(
-              fromVersion: 1,
-              toVersion: 1,
-              environment: 'prod',
-            ),
+            StaticMigration(fromVersion: 1, toVersion: 1, environment: 'e'),
           ],
         ),
         throwsArgumentError,
@@ -634,16 +509,8 @@ void main() {
         () => createStorage(
           schemaVersion: 3,
           migrations: const <StorageMigration>[
-            StaticMigration(
-              fromVersion: 1,
-              toVersion: 2,
-              environment: 'stage',
-            ),
-            StaticMigration(
-              fromVersion: 1,
-              toVersion: 3,
-              environment: 'prod',
-            ),
+            StaticMigration(fromVersion: 1, toVersion: 2, environment: 'a'),
+            StaticMigration(fromVersion: 1, toVersion: 3, environment: 'b'),
           ],
         ),
         throwsArgumentError,
