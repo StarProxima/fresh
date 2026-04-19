@@ -35,6 +35,17 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   SessionsSnapshot _snapshot = SessionsSnapshot.empty;
   F? _fresh;
 
+  /// Подписка на [Fresh.authenticationStatus] активного [Fresh].
+  /// Нужна чтобы ловить force-logout, который Fresh триггерит внутри
+  /// себя при [RevokeTokenException] в refreshToken: после clearToken
+  /// Fresh эмитит unauthenticated, а контроллер чистит активную сессию.
+  StreamSubscription<AuthenticationStatus>? _authStatusSub;
+  AuthenticationStatus _lastAuthStatus = AuthenticationStatus.initial;
+
+  /// Флаг на время удаления сессии из-за revoke, чтобы не ретриггерить
+  /// removeSession через тот же authenticationStatus listener.
+  bool _removingActiveFromRevoke = false;
+
   final _snapshotController = StreamController<SessionsSnapshot>.broadcast();
   final _freshController = StreamController<F?>.broadcast();
 
@@ -242,16 +253,52 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
 
   Future<void> _rebuildFresh(FreshSession session) async {
     await _closeFresh();
-    _fresh = _freshBuilder(_tokenStorageBuilder(session));
-    _emitFresh(_fresh);
+    final fresh = _freshBuilder(_tokenStorageBuilder(session));
+    _fresh = fresh;
+    _lastAuthStatus = AuthenticationStatus.initial;
+    _authStatusSub = fresh.authenticationStatus.listen(_onAuthStatusChanged);
+    _emitFresh(fresh);
   }
 
   Future<void> _closeFresh() async {
+    await _authStatusSub?.cancel();
+    _authStatusSub = null;
+    _lastAuthStatus = AuthenticationStatus.initial;
+
     final current = _fresh;
     _fresh = null;
     if (current != null) {
       await current.close();
     }
+  }
+
+  /// Force-logout хук: ловим переход `authenticated -> unauthenticated` от
+  /// Fresh (он случается при clearToken/revokeToken внутри Fresh, напр.
+  /// после RevokeTokenException в refreshToken) и чистим активную сессию
+  /// в снапшоте. Иначе контроллер остается с activeUserId, но токена нет -
+  /// все запросы уходят без авторизации и фейлятся в бесконечном 401.
+  void _onAuthStatusChanged(AuthenticationStatus status) {
+    final prev = _lastAuthStatus;
+    _lastAuthStatus = status;
+
+    if (_closed || _removingActiveFromRevoke) return;
+    if (prev != AuthenticationStatus.authenticated) return;
+    if (status != AuthenticationStatus.unauthenticated) return;
+
+    final active = _snapshot.activeSession;
+    if (active == null) return;
+
+    _removingActiveFromRevoke = true;
+    // ignore: unawaited_futures
+    Future(() async {
+      try {
+        await removeSession(active);
+      } catch (_) {
+        // Контроллер мог быть закрыт или сессия уже удалена - игнорим.
+      } finally {
+        _removingActiveFromRevoke = false;
+      }
+    });
   }
 
   void _emitFresh(F? fresh) {
