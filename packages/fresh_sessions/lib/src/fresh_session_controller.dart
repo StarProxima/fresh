@@ -35,15 +35,15 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
   SessionsSnapshot _snapshot = SessionsSnapshot.empty;
   F? _fresh;
 
-  /// Подписка на [Fresh.authenticationStatus] активного [Fresh].
-  /// Нужна чтобы ловить force-logout, который Fresh триггерит внутри
-  /// себя при [RevokeTokenException] в refreshToken: после clearToken
-  /// Fresh эмитит unauthenticated, а контроллер чистит активную сессию.
+  /// Subscription to [Fresh.authenticationStatus] of the active [Fresh].
+  /// Needed to catch a force-logout that Fresh triggers internally on a
+  /// [RevokeTokenException] in refreshToken: after clearToken, Fresh emits
+  /// unauthenticated, and the controller then clears the active session.
   StreamSubscription<AuthenticationStatus>? _authStatusSub;
   AuthenticationStatus _lastAuthStatus = AuthenticationStatus.initial;
 
-  /// Флаг на время удаления сессии из-за revoke, чтобы не ретриггерить
-  /// removeSession через тот же authenticationStatus listener.
+  /// Set while a revoke-driven removeSession is in flight so the same
+  /// authenticationStatus listener does not re-trigger it.
   bool _removingActiveFromRevoke = false;
 
   final _snapshotController = StreamController<SessionsSnapshot>.broadcast();
@@ -272,11 +272,13 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     }
   }
 
-  /// Force-logout хук: ловим переход `authenticated -> unauthenticated` от
-  /// Fresh (он случается при clearToken/revokeToken внутри Fresh, напр.
-  /// после RevokeTokenException в refreshToken) и чистим активную сессию
-  /// в снапшоте. Иначе контроллер остается с activeUserId, но токена нет -
-  /// все запросы уходят без авторизации и фейлятся в бесконечном 401.
+  /// Force-logout hook: catches the `authenticated -> unauthenticated`
+  /// transition from Fresh (fired when Fresh itself calls
+  /// clearToken/revokeToken, e.g. after a [RevokeTokenException] in
+  /// refreshToken) and clears the active session from the snapshot.
+  /// Without this the controller would keep `activeUserId` while Fresh has
+  /// no token, so every request would go out unauthenticated and keep
+  /// failing with 401.
   void _onAuthStatusChanged(AuthenticationStatus status) {
     final prev = _lastAuthStatus;
     _lastAuthStatus = status;
@@ -294,7 +296,7 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
       try {
         await removeSession(active);
       } catch (_) {
-        // Контроллер мог быть закрыт или сессия уже удалена - игнорим.
+        // Controller might be closed or the session already removed.
       } finally {
         _removingActiveFromRevoke = false;
       }

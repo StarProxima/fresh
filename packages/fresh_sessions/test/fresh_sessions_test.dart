@@ -20,8 +20,8 @@ class _TestFresh with FreshMixin<String> {
   Future<String> performTokenRefresh(String? token) async => '${token}_new';
 }
 
-/// Fresh, который всегда бросает [RevokeTokenException] при refresh -
-/// эмулирует поведение нашего shouldRefresh=401 + revoke.
+/// Fresh that always throws [RevokeTokenException] on refresh -
+/// emulates a shouldRefresh=401 + revoke flow.
 class _RevokingFresh with FreshMixin<String> {
   _RevokingFresh(TokenStorage<String> tokenStorage) {
     this.tokenStorage = tokenStorage;
@@ -721,7 +721,8 @@ void main() {
 
     // ------ force-logout via Fresh.authenticationStatus ------
 
-    test('force-logout: clearToken на Fresh чистит активную сессию', () async {
+    test('force-logout: clearToken on Fresh clears the active session',
+        () async {
       final reg = _TokenStorageRegistry();
       final ctrl = FreshSessionController<_TestFresh, String>(
         sessionsStorage: InMemorySessionsStorage(),
@@ -731,15 +732,16 @@ void main() {
       await ctrl.ready;
 
       await ctrl.saveSession(token: 'tok1', userId: 'u1');
-      // Ждём hydration Fresh (async read tokenStorage -> authenticated).
+      // Wait for Fresh hydration (async read tokenStorage -> authenticated).
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
       expect(ctrl.activeSession, isNotNull);
 
-      // Эмулируем force-logout от самого Fresh (как после RevokeTokenException).
+      // Simulate a force-logout issued by Fresh itself
+      // (as if after a RevokeTokenException).
       await ctrl.fresh!.clearToken();
-      // Listener отрабатывает через микротаск + removeSession через Future().
+      // Listener runs via microtask + removeSession via Future().
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
@@ -753,8 +755,8 @@ void main() {
     });
 
     test(
-        'force-logout: RevokeTokenException в refreshToken чистит активную сессию',
-        () async {
+        'force-logout: RevokeTokenException in refreshToken clears the active '
+        'session', () async {
       final reg = _TokenStorageRegistry();
       final ctrl = FreshSessionController<_RevokingFresh, String>(
         sessionsStorage: InMemorySessionsStorage(),
@@ -767,10 +769,11 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      // Триггерим refresh - он бросит RevokeTokenException, что внутри
-      // FreshMixin вызовет clearToken -> authenticationStatus=unauthenticated.
-      // tokenUsedForRequest нужен чтобы миновать short-circuit в refreshToken,
-      // который возвращает текущий токен, если он != переданного.
+      // Trigger a refresh - it throws RevokeTokenException, which inside
+      // FreshMixin calls clearToken and emits authenticationStatus=unauthenticated.
+      // tokenUsedForRequest is required to bypass the short-circuit in
+      // refreshToken that returns the current token when it differs from the
+      // one passed in.
       final currentToken = await ctrl.fresh!.token;
       await expectLater(
         ctrl.fresh!.refreshToken(tokenUsedForRequest: currentToken),
@@ -788,10 +791,10 @@ void main() {
     });
 
     test(
-        'force-logout: initial -> unauthenticated без токена НЕ удаляет сессию',
-        () async {
-      // Пустое хранилище токенов, но сессия в снапшоте есть - эмулируем
-      // edge case "сессия в метаданных, а токен-сторадж пуст".
+        'force-logout: initial -> unauthenticated with no token does NOT '
+        'remove the session', () async {
+      // Empty token storage but a session recorded in the snapshot - the
+      // "session metadata without a token" edge case.
       final reg = _TokenStorageRegistry();
       final storage = InMemorySessionsStorage();
       final now = DateTime.now();
@@ -808,8 +811,8 @@ void main() {
         freshBuilder: _TestFresh.new,
       );
       await ctrl.ready;
-      // Fresh прочитает пустой tokenStorage и эмитнет unauthenticated,
-      // но prev == initial, так что чистить сессию не должны.
+      // Fresh reads an empty tokenStorage and emits unauthenticated, but
+      // prev == initial, so we must not clear the session.
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
@@ -819,9 +822,9 @@ void main() {
       await ctrl.close();
     });
 
-    test('force-logout: removeSession через logout не ретриггерится', () async {
-      // Явный logout через removeSession не должен вызывать второй
-      // removeSession через authenticationStatus listener.
+    test('force-logout: explicit removeSession does not retrigger', () async {
+      // An explicit logout via removeSession must not cause a second
+      // removeSession through the authenticationStatus listener.
       final reg = _TokenStorageRegistry();
       final storage = InMemorySessionsStorage();
       final ctrl = FreshSessionController<_TestFresh, String>(
@@ -843,7 +846,7 @@ void main() {
 
       await sub.cancel();
 
-      // Ровно один snapshot с пустыми сессиями (не два).
+      // Exactly one empty-sessions snapshot (not two).
       final emptySnapshots = snapshots.where((s) => s.isEmpty).toList();
       expect(emptySnapshots, hasLength(1));
       expect(ctrl.activeSession, isNull);
