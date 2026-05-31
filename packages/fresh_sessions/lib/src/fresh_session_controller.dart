@@ -272,20 +272,31 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     }
   }
 
-  /// Force-logout hook: catches the `authenticated -> unauthenticated`
-  /// transition from Fresh (fired when Fresh itself calls
-  /// clearToken/revokeToken, e.g. after a [RevokeTokenException] in
-  /// refreshToken) and clears the active session from the snapshot.
-  /// Without this the controller would keep `activeUserId` while Fresh has
-  /// no token, so every request would go out unauthenticated and keep
-  /// failing with 401.
+  /// Force-logout hook: catches any transition into `unauthenticated` on the
+  /// active [Fresh] and clears the active session from the snapshot.
+  ///
+  /// This fires in two cases:
+  ///  * `authenticated -> unauthenticated` - Fresh revoked the token itself,
+  ///    e.g. after a [RevokeTokenException] in refreshToken (a 401 -> revoke
+  ///    flow).
+  ///  * `initial -> unauthenticated` - on hydration the token storage of an
+  ///    active session came back empty. This is a dangling session: the
+  ///    snapshot still points at `activeUserId` while the token has already
+  ///    been deleted (e.g. by a previous revoke whose `removeSession` cleanup
+  ///    was interrupted, since `clearToken` deletes the token before this hook
+  ///    removes the session). Such a session can never authenticate again, so
+  ///    it must be cleared instead of leaving every request to go out
+  ///    unauthenticated and keep failing with 401 forever.
+  ///
+  /// The leading `initial` emission and repeated `unauthenticated` emissions
+  /// are ignored, so this only acts on a real transition into `unauthenticated`.
   void _onAuthStatusChanged(AuthenticationStatus status) {
     final prev = _lastAuthStatus;
     _lastAuthStatus = status;
 
     if (_closed || _removingActiveFromRevoke) return;
-    if (prev != AuthenticationStatus.authenticated) return;
     if (status != AuthenticationStatus.unauthenticated) return;
+    if (prev == AuthenticationStatus.unauthenticated) return;
 
     final active = _snapshot.activeSession;
     if (active == null) return;

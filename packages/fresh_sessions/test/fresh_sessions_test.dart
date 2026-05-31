@@ -791,10 +791,14 @@ void main() {
     });
 
     test(
-        'force-logout: initial -> unauthenticated with no token does NOT '
-        'remove the session', () async {
+        'force-logout: initial -> unauthenticated with no token clears the '
+        'dangling active session', () async {
       // Empty token storage but a session recorded in the snapshot - the
-      // "session metadata without a token" edge case.
+      // "session metadata without a token" edge case (e.g. a previous revoke
+      // deleted the token but its session cleanup was interrupted). On
+      // hydration Fresh reads the empty storage and emits unauthenticated;
+      // such a dangling active session can never authenticate and must be
+      // cleared, otherwise every request goes out unauthenticated forever.
       final reg = _TokenStorageRegistry();
       final storage = InMemorySessionsStorage();
       final now = DateTime.now();
@@ -811,13 +815,14 @@ void main() {
         freshBuilder: _TestFresh.new,
       );
       await ctrl.ready;
-      // Fresh reads an empty tokenStorage and emits unauthenticated, but
-      // prev == initial, so we must not clear the session.
+      // Listener runs via microtask + removeSession via Future().
+      await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(ctrl.activeSession, isNotNull);
-      expect(ctrl.snapshot.sessions, hasLength(1));
+      expect(ctrl.activeSession, isNull);
+      expect(ctrl.fresh, isNull);
+      expect(ctrl.snapshot.isEmpty, isTrue);
 
       await ctrl.close();
     });
