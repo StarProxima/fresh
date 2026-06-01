@@ -256,6 +256,15 @@ final class FreshSessionController<F extends FreshMixin<T>, T>
     final fresh = _freshBuilder(_tokenStorageBuilder(session));
     _fresh = fresh;
     _lastAuthStatus = AuthenticationStatus.initial;
+    // INVARIANT: subscribe synchronously, before the first await after Fresh is
+    // built. Fresh's constructor kicks off an async tokenStorage read
+    // (read().then(...)); for a dangling session that read returns null and
+    // emits `unauthenticated`. Because this listen() runs in the same
+    // synchronous frame, the subscription to Fresh's internal broadcast stream
+    // is active before that async read completes - so the `unauthenticated`
+    // event is not dropped and _onAuthStatusChanged can clear the dead session.
+    // Do not move this listen() after an await, or the force-logout for a
+    // token-less active session would silently stop working.
     _authStatusSub = fresh.authenticationStatus.listen(_onAuthStatusChanged);
     _emitFresh(fresh);
   }
